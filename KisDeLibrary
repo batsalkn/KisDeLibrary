@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: #f6f4ef;
+      margin: 0;
+      padding: 24px 16px 60px;
+      color: #2b2b2b;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 4px; }
+    .sub { color: #777; font-size: 0.9rem; margin-bottom: 20px; }
+    nav a {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #6b4f2b;
+      text-decoration: none;
+      font-size: 0.9rem;
+      border: 1px solid #d8cfbe;
+      padding: 6px 12px;
+      border-radius: 8px;
+      background: #fff;
+    }
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin: 14px 0 4px; }
+    input, textarea, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    textarea { resize: vertical; min-height: 60px; }
+    button {
+      margin-top: 20px;
+      width: 100%;
+      padding: 13px;
+      background: #6b4f2b;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    button:disabled { opacity: 0.6; }
+    #status { margin-top: 14px; font-size: 0.9rem; }
+    .ok { color: #2e7d32; }
+    .err { color: #c62828; }
+    .dupe {
+      margin-top: 14px;
+      padding: 12px;
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .dupe strong { display: block; margin-bottom: 6px; }
+    .dupe ul { margin: 0; padding-left: 18px; }
+
+    .scanBtn {
+      width: 100%;
+      padding: 13px;
+      background: #fff;
+      color: #6b4f2b;
+      border: 2px dashed #c9b892;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+    #scanPreview {
+      display: none;
+      margin: 10px 0;
+      border-radius: 8px;
+      max-width: 100%;
+      max-height: 180px;
+    }
+    #scanStatus { font-size: 0.85rem; color: #888; margin-bottom: 6px; min-height: 1.1em; }
+    .scanResult {
+      display: none;
+      background: #f0f7f0;
+      border: 1px solid #cde5cd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      margin-bottom: 14px;
+    }
+    .scanResult strong { display: block; margin-bottom: 4px; }
+    .scanResult .rawText {
+      white-space: pre-wrap;
+      color: #555;
+      max-height: 90px;
+      overflow-y: auto;
+      margin-top: 6px;
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+    .scanResult button {
+      margin-top: 8px;
+      width: auto;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      background: #eee;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav><a href="?page=browse">&larr; Back to library list</a></nav>
+    <h1>Add a book</h1>
+    <div class="sub">Check for duplicates below before buying another copy!</div>
+
+    <form id="bookForm">
+      <button type="button" class="scanBtn" id="scanBtn">📷 Scan book cover</button>
+      <input type="file" id="coverInput" accept="image/*" capture="environment" style="display:none">
+      <img id="scanPreview" alt="cover preview">
+      <div id="scanStatus"></div>
+      <div class="scanResult" id="scanResult">
+        <strong>Guessed from cover — tap to use, or just edit the fields below:</strong>
+        <div id="scanGuess"></div>
+        <button type="button" id="showRaw">Show full scanned text</button>
+        <div class="rawText" id="rawText" style="display:none;"></div>
+      </div>
+
+      <label for="title">Title *</label>
+      <input id="title" required autocomplete="off">
+
+      <div id="dupeBox"></div>
+
+      <label for="author">Author</label>
+      <input id="author" autocomplete="off">
+
+      <label for="notes">Remarks</label>
+      <textarea id="notes" placeholder="Optional — anything worth noting"></textarea>
+
+      <button type="submit" id="submitBtn">Save book</button>
+      <div id="status"></div>
+    </form>
+  </div>
+
+<script>
+  // Hardcoded Apps Script Web App Endpoint
+  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2TWaZi95i0r3bxXLpfpvXKiT8Y0gN74GPcyiagu2klXhCGj2PmoXuFPDAFSuinqJ0/exec";
+
+  const titleEl = document.getElementById('title');
+  const authorEl = document.getElementById('author');
+  const dupeBox = document.getElementById('dupeBox');
+  const statusEl = document.getElementById('status');
+  const submitBtn = document.getElementById('submitBtn');
+  let dupeCheckTimer = null;
+
+  async function apiCall(action, payload) {
+    const formData = new FormData();
+    formData.append('action', action);
+    formData.append('payload', JSON.stringify(payload));
+    
+    // Apps Script requires redirect follow for POST requests across origins
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body: formData
+    });
+    return await res.json();
+  }
+
+  function checkDupes() {
+    const title = titleEl.value.trim();
+    const author = authorEl.value.trim();
+    if (!title) { dupeBox.innerHTML = ''; return; }
+    
+    apiCall('checkDuplicate', { title, author })
+      .then(matches => {
+        if (matches && matches.length) {
+          dupeBox.innerHTML = '<div class="dupe"><strong>⚠ Possible match already in the library:</strong><ul>' +
+            matches.map(m => `<li>${escapeHtml(m.Title)}${m.Author ? ' — ' + escapeHtml(m.Author) : ''}</li>`).join('') +
+            '</ul></div>';
+        } else {
+          dupeBox.innerHTML = '';
+        }
+      })
+      .catch(err => console.error("Dupe check failed", err));
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  titleEl.addEventListener('input', () => {
+    clearTimeout(dupeCheckTimer);
+    dupeCheckTimer = setTimeout(checkDupes, 400);
+  });
+  authorEl.addEventListener('input', () => {
+    clearTimeout(dupeCheckTimer);
+    dupeCheckTimer = setTimeout(checkDupes, 400);
+  });
+
+  // ---- Camera scan ----
+  const scanBtn = document.getElementById('scanBtn');
+  const coverInput = document.getElementById('coverInput');
+  const scanPreview = document.getElementById('scanPreview');
+  const scanStatus = document.getElementById('scanStatus');
+  const scanResult = document.getElementById('scanResult');
+  const scanGuess = document.getElementById('scanGuess');
+  const rawTextBox = document.getElementById('rawText');
+
+  scanBtn.addEventListener('click', () => coverInput.click());
+
+  document.getElementById('showRaw').addEventListener('click', () => {
+    rawTextBox.style.display = rawTextBox.style.display === 'none' ? 'block' : 'none';
+  });
+
+  coverInput.addEventListener('change', function() {
+    const file = coverInput.files[0];
+    if (!file) return;
+
+    scanPreview.src = URL.createObjectURL(file);
+    scanPreview.style.display = 'block';
+    scanResult.style.display = 'none';
+    scanStatus.textContent = 'Reading cover... this can take up to 15 seconds.';
+    scanBtn.disabled = true;
+
+    const reader = new FileReader();
+    reader.onload = function() {
+      const base64 = reader.result.split(',')[1];
+      
+      apiCall('scanCoverImage', { base64: base64, mimeType: file.type, name: file.name })
+        .then(res => {
+          scanBtn.disabled = false;
+          if (!res.success) {
+            scanStatus.textContent = 'Could not read the cover (' + res.error + '). Just type it in below.';
+            return;
+          }
+          scanStatus.textContent = '';
+          handleScanText(res.text);
+        })
+        .catch(err => {
+          scanBtn.disabled = false;
+          scanStatus.textContent = 'Scan failed: ' + err.message + '. Just type it in below.';
+        });
+    };
+    reader.readAsDataURL(file);
+  });
+
+  function handleScanText(text) {
+    rawTextBox.textContent = text;
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      scanStatus.textContent = 'No text found on the cover — try a clearer, well-lit photo, or type it in below.';
+      return;
+    }
+
+    let authorGuess = '';
+    const authorLine = lines.find(l => /^by\s+/i.test(l));
+    if (authorLine) authorGuess = authorLine.replace(/^by\s+/i, '').trim();
+
+    const candidateLines = lines.slice(0, 6).filter(l => l !== authorLine);
+    let titleGuess = candidateLines.sort((a, b) => b.length - a.length)[0] || lines[0];
+
+    scanGuess.innerHTML =
+      '<div><button type="button" class="useTitle" style="width:auto;padding:4px 10px;font-size:0.78rem;background:#6b4f2b;color:#fff;border-radius:6px;">Use as title</button> ' +
+      escapeHtml(titleGuess) + '</div>' +
+      (authorGuess ? '<div style="margin-top:6px;"><button type="button" class="useAuthor" style="width:auto;padding:4px 10px;font-size:0.78rem;background:#6b4f2b;color:#fff;border-radius:6px;">Use as author</button> ' + escapeHtml(authorGuess) + '</div>' : '');
+    scanResult.style.display = 'block';
+
+    scanGuess.querySelector('.useTitle').addEventListener('click', () => {
+      titleEl.value = titleGuess;
+      checkDupes();
+    });
+    const useAuthorBtn = scanGuess.querySelector('.useAuthor');
+    if (useAuthorBtn) {
+      useAuthorBtn.addEventListener('click', () => {
+        authorEl.value = authorGuess;
+        checkDupes();
+      });
+    }
+  }
+
+  document.getElementById('bookForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    statusEl.textContent = 'Saving...';
+    statusEl.className = '';
+
+    const book = {
+      title: titleEl.value.trim(),
+      author: authorEl.value.trim(),
+      notes: document.getElementById('notes').value.trim()
+    };
+
+    if (!book.title) {
+      statusEl.textContent = 'Title is required.';
+      statusEl.className = 'err';
+      submitBtn.disabled = false;
+      return;
+    }
+
+    apiCall('addBook', book)
+      .then(res => {
+        statusEl.textContent = '✓ Saved "' + book.title + '"';
+        statusEl.className = 'ok';
+        document.getElementById('bookForm').reset();
+        dupeBox.innerHTML = '';
+        submitBtn.disabled = false;
+      })
+      .catch(err => {
+        statusEl.textContent = 'Error: ' + err.message;
+        statusEl.className = 'err';
+        submitBtn.disabled = false;
+      });
+  });
+</script>
+</body>
+</html>
