@@ -3,6 +3,8 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add a Book - Home Library</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -112,7 +114,7 @@
 </head>
 <body>
   <div class="wrap">
-    <nav><a href="?page=browse">&larr; Back to library list</a></nav>
+    <nav><a href="browse.html">&larr; View library list</a></nav>
     <h1>Add a book</h1>
     <div class="sub">Check for duplicates below before buying another copy!</div>
 
@@ -160,7 +162,6 @@
     formData.append('action', action);
     formData.append('payload', JSON.stringify(payload));
     
-    // Apps Script requires redirect follow for POST requests across origins
     const res = await fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       body: formData
@@ -187,7 +188,7 @@
   }
 
   function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   titleEl.addEventListener('input', () => {
