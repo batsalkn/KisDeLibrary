@@ -3,8 +3,6 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Add a Book - Home Library</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -75,6 +73,9 @@
       font-weight: 600;
       margin-bottom: 10px;
     }
+    #scanLang {
+      margin-bottom: 10px;
+    }
     #scanPreview {
       display: none;
       margin: 10px 0;
@@ -114,17 +115,24 @@
 </head>
 <body>
   <div class="wrap">
-    <nav><a href="browse.html">&larr; View library list</a></nav>
+    <nav><a href="?page=browse">&larr; Back to library list</a></nav>
     <h1>Add a book</h1>
     <div class="sub">Check for duplicates below before buying another copy!</div>
 
     <form id="bookForm">
       <button type="button" class="scanBtn" id="scanBtn">📷 Scan book cover</button>
+      <label for="scanLang" style="margin-top:0;">Cover language</label>
+      <select id="scanLang">
+        <option value="">Auto-detect</option>
+        <option value="en">English</option>
+        <option value="zh">Chinese</option>
+        <option value="ne">Nepali</option>
+      </select>
       <input type="file" id="coverInput" accept="image/*" capture="environment" style="display:none">
       <img id="scanPreview" alt="cover preview">
       <div id="scanStatus"></div>
       <div class="scanResult" id="scanResult">
-        <strong>Guessed from cover — tap to use, or just edit the fields below:</strong>
+        <strong>Tap a line below to use it as the title or author:</strong>
         <div id="scanGuess"></div>
         <button type="button" id="showRaw">Show full scanned text</button>
         <div class="rawText" id="rawText" style="display:none;"></div>
@@ -147,9 +155,6 @@
   </div>
 
 <script>
-  // Hardcoded Apps Script Web App Endpoint
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2TWaZi95i0r3bxXLpfpvXKiT8Y0gN74GPcyiagu2klXhCGj2PmoXuFPDAFSuinqJ0/exec";
-
   const titleEl = document.getElementById('title');
   const authorEl = document.getElementById('author');
   const dupeBox = document.getElementById('dupeBox');
@@ -157,38 +162,23 @@
   const submitBtn = document.getElementById('submitBtn');
   let dupeCheckTimer = null;
 
-  async function apiCall(action, payload) {
-    const formData = new FormData();
-    formData.append('action', action);
-    formData.append('payload', JSON.stringify(payload));
-    
-    const res = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      body: formData
-    });
-    return await res.json();
-  }
-
   function checkDupes() {
     const title = titleEl.value.trim();
     const author = authorEl.value.trim();
     if (!title) { dupeBox.innerHTML = ''; return; }
-    
-    apiCall('checkDuplicate', { title, author })
-      .then(matches => {
-        if (matches && matches.length) {
-          dupeBox.innerHTML = '<div class="dupe"><strong>⚠ Possible match already in the library:</strong><ul>' +
-            matches.map(m => `<li>${escapeHtml(m.Title)}${m.Author ? ' — ' + escapeHtml(m.Author) : ''}</li>`).join('') +
-            '</ul></div>';
-        } else {
-          dupeBox.innerHTML = '';
-        }
-      })
-      .catch(err => console.error("Dupe check failed", err));
+    google.script.run.withSuccessHandler(matches => {
+      if (matches && matches.length) {
+        dupeBox.innerHTML = '<div class="dupe"><strong>⚠ Possible match already in the library:</strong><ul>' +
+          matches.map(m => `<li>${escapeHtml(m.Title)}${m.Author ? ' — ' + escapeHtml(m.Author) : ''}</li>`).join('') +
+          '</ul></div>';
+      } else {
+        dupeBox.innerHTML = '';
+      }
+    }).checkDuplicate(title, author);
   }
 
   function escapeHtml(s) {
-    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
   titleEl.addEventListener('input', () => {
@@ -228,9 +218,8 @@
     const reader = new FileReader();
     reader.onload = function() {
       const base64 = reader.result.split(',')[1];
-      
-      apiCall('scanCoverImage', { base64: base64, mimeType: file.type, name: file.name })
-        .then(res => {
+      google.script.run
+        .withSuccessHandler(res => {
           scanBtn.disabled = false;
           if (!res.success) {
             scanStatus.textContent = 'Could not read the cover (' + res.error + '). Just type it in below.';
@@ -239,10 +228,11 @@
           scanStatus.textContent = '';
           handleScanText(res.text);
         })
-        .catch(err => {
+        .withFailureHandler(err => {
           scanBtn.disabled = false;
           scanStatus.textContent = 'Scan failed: ' + err.message + '. Just type it in below.';
-        });
+        })
+        .scanCoverImage(base64, file.type, file.name, document.getElementById('scanLang').value);
     };
     reader.readAsDataURL(file);
   });
@@ -255,30 +245,31 @@
       return;
     }
 
-    let authorGuess = '';
-    const authorLine = lines.find(l => /^by\s+/i.test(l));
-    if (authorLine) authorGuess = authorLine.replace(/^by\s+/i, '').trim();
-
-    const candidateLines = lines.slice(0, 6).filter(l => l !== authorLine);
-    let titleGuess = candidateLines.sort((a, b) => b.length - a.length)[0] || lines[0];
-
-    scanGuess.innerHTML =
-      '<div><button type="button" class="useTitle" style="width:auto;padding:4px 10px;font-size:0.78rem;background:#6b4f2b;color:#fff;border-radius:6px;">Use as title</button> ' +
-      escapeHtml(titleGuess) + '</div>' +
-      (authorGuess ? '<div style="margin-top:6px;"><button type="button" class="useAuthor" style="width:auto;padding:4px 10px;font-size:0.78rem;background:#6b4f2b;color:#fff;border-radius:6px;">Use as author</button> ' + escapeHtml(authorGuess) + '</div>' : '');
+    // Show up to the first 8 lines, each with buttons to use it as title or author.
+    // No language-specific parsing (e.g. English "by ___") so this works the
+    // same way for English, Chinese, or Nepali covers.
+    const shown = lines.slice(0, 8);
+    scanGuess.innerHTML = shown.map((line, i) => `
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
+        <button type="button" class="useTitle" data-i="${i}" style="width:auto;padding:4px 10px;font-size:0.75rem;background:#6b4f2b;color:#fff;border-radius:6px;">Title</button>
+        <button type="button" class="useAuthor" data-i="${i}" style="width:auto;padding:4px 10px;font-size:0.75rem;background:#8a8a8a;color:#fff;border-radius:6px;">Author</button>
+        <span>${escapeHtml(line)}</span>
+      </div>
+    `).join('');
     scanResult.style.display = 'block';
 
-    scanGuess.querySelector('.useTitle').addEventListener('click', () => {
-      titleEl.value = titleGuess;
-      checkDupes();
-    });
-    const useAuthorBtn = scanGuess.querySelector('.useAuthor');
-    if (useAuthorBtn) {
-      useAuthorBtn.addEventListener('click', () => {
-        authorEl.value = authorGuess;
+    scanGuess.querySelectorAll('.useTitle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        titleEl.value = shown[parseInt(btn.getAttribute('data-i'), 10)];
         checkDupes();
       });
-    }
+    });
+    scanGuess.querySelectorAll('.useAuthor').forEach(btn => {
+      btn.addEventListener('click', () => {
+        authorEl.value = shown[parseInt(btn.getAttribute('data-i'), 10)];
+        checkDupes();
+      });
+    });
   }
 
   document.getElementById('bookForm').addEventListener('submit', function(e) {
@@ -300,19 +291,22 @@
       return;
     }
 
-    apiCall('addBook', book)
-      .then(res => {
+    google.script.run
+      .withSuccessHandler(res => {
         statusEl.textContent = '✓ Saved "' + book.title + '"';
         statusEl.className = 'ok';
         document.getElementById('bookForm').reset();
         dupeBox.innerHTML = '';
+        scanResult.style.display = 'none';
+        scanPreview.style.display = 'none';
         submitBtn.disabled = false;
       })
-      .catch(err => {
+      .withFailureHandler(err => {
         statusEl.textContent = 'Error: ' + err.message;
         statusEl.className = 'err';
         submitBtn.disabled = false;
-      });
+      })
+      .addBook(book);
   });
 </script>
 </body>
