@@ -3,219 +3,151 @@
 <head>
   <base target="_top">
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Home Library Collection</title>
   <style>
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background: #f6f4ef;
       margin: 0;
-      padding: 24px 16px 60px;
+      padding: 20px 14px 60px;
       color: #2b2b2b;
     }
-    .wrap { max-width: 600px; margin: 0 auto; }
-    h1 { font-size: 1.4rem; margin-bottom: 4px; }
-    .sub { color: #777; font-size: 0.9rem; margin-bottom: 20px; }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin-bottom: 2px; }
+    .sub { color: #777; font-size: 0.85rem; margin-bottom: 16px; }
     nav a {
       display: inline-block;
-      margin-bottom: 20px;
-      color: #6b4f2b;
+      margin-bottom: 16px;
+      color: #fff;
       text-decoration: none;
       font-size: 0.9rem;
-      border: 1px solid #d8cfbe;
-      padding: 6px 12px;
+      padding: 8px 14px;
       border-radius: 8px;
-      background: #fff;
-    }
-    .search-box {
-      width: 100%;
-      padding: 12px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      font-size: 1rem;
-      margin-bottom: 20px;
-    }
-    .book-card {
-      background: #fff;
-      padding: 16px;
-      border-radius: 8px;
-      border: 1px solid #e2dacd;
-      margin-bottom: 12px;
-      position: relative;
-    }
-    .book-title { font-weight: 700; font-size: 1.05rem; color: #333; }
-    .book-author { color: #6b4f2b; font-size: 0.9rem; margin-top: 4px; }
-    .book-notes { color: #666; font-size: 0.85rem; margin-top: 8px; font-style: italic; }
-    
-    /* Action & Edit Form Styling */
-    .edit-btn {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      background: #f0ebe1;
-      color: #6b4f2b;
-      border: 1px solid #d8cfbe;
-      border-radius: 6px;
-      padding: 4px 10px;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-    .edit-form label { display: block; font-size: 0.8rem; font-weight: 600; margin: 10px 0 2px; }
-    .edit-form input, .edit-form textarea {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 0.9rem;
-    }
-    .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
-    .btn-save {
       background: #6b4f2b;
-      color: #fff;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 6px;
-      cursor: pointer;
+      font-weight: 600;
     }
-    .btn-cancel {
-      background: #e0e0e0;
-      color: #333;
-      border: none;
-      padding: 8px 14px;
-      border-radius: 6px;
-      cursor: pointer;
+    .searchBar {
+      position: sticky;
+      top: 0;
+      background: #f6f4ef;
+      padding: 6px 0 12px;
+      z-index: 5;
     }
-    #loading { text-align: center; color: #888; margin-top: 20px; }
+    #search {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      font-size: 1rem;
+    }
+    .count { font-size: 0.8rem; color: #888; margin-top: 6px; }
+    .card {
+      background: #fff;
+      border: 1px solid #e5ddc9;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .card h3 { margin: 0 0 2px; font-size: 1.02rem; }
+    .card .meta { font-size: 0.82rem; color: #777; margin-bottom: 8px; }
+    .card .notes { font-size: 0.8rem; color: #666; font-style: italic; margin-bottom: 8px; }
+    .readRow { display: flex; gap: 18px; align-items: center; font-size: 0.85rem; }
+    .readRow label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .readRow input { width: 17px; height: 17px; }
+    #loading, #empty { text-align: center; color: #999; padding: 30px 0; }
+    #empty { display: none; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <nav><a href="index.html">&larr; Add a new book</a></nav>
-    <h1>Home Library</h1>
-    <div class="sub">Search or edit your collection below!</div>
+    <nav><a href="?page=entry">+ Add a book</a></nav>
+    <h1>Our Home Library</h1>
+    <div class="sub">Search by title or author before buying a new one.</div>
 
-    <input type="text" id="searchInput" class="search-box" placeholder="Search by title or author...">
+    <div class="searchBar">
+      <input id="search" type="text" placeholder="Search title or author...">
+      <div class="count" id="count"></div>
+    </div>
 
-    <div id="loading">Loading library books...</div>
-    <div id="bookList"></div>
+    <div id="loading">Loading books...</div>
+    <div id="empty">No books match your search.</div>
+    <div id="list"></div>
   </div>
 
 <script>
-  const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby2TWaZi95i0r3bxXLpfpvXKiT8Y0gN74GPcyiagu2klXhCGj2PmoXuFPDAFSuinqJ0/exec";
+  let allBooks = [];
 
-  const searchInput = document.getElementById('searchInput');
-  const bookList = document.getElementById('bookList');
-  const loading = document.getElementById('loading');
-  let searchTimer = null;
-  let libraryBooks = [];
-
-  async function fetchBooks(query = '') {
-    loading.style.display = 'block';
-
-    const formData = new FormData();
-    formData.append('action', 'getBooks');
-    formData.append('payload', JSON.stringify({ query: query }));
-
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData });
-      libraryBooks = await res.json();
-      loading.style.display = 'none';
-      renderBooks(libraryBooks);
-    } catch (err) {
-      loading.textContent = 'Failed to load library data.';
-    }
-  }
-
-  function renderBooks(books) {
-    if (!books || books.length === 0) {
-      bookList.innerHTML = '<div style="text-align:center; color:#888;">No books found matching your search.</div>';
+  function render(books) {
+    const list = document.getElementById('list');
+    const empty = document.getElementById('empty');
+    document.getElementById('count').textContent = books.length + ' book' + (books.length === 1 ? '' : 's');
+    if (books.length === 0) {
+      list.innerHTML = '';
+      empty.style.display = 'block';
       return;
     }
-
-    bookList.innerHTML = books.map(book => `
-      <div class="book-card" id="card-${book.RowIndex}">
-        <button class="edit-btn" onclick="toggleEdit(${book.RowIndex})">✏ Edit</button>
-        
-        <div class="view-mode" id="view-${book.RowIndex}">
-          <div class="book-title">${escapeHtml(book.Title)}</div>
-          ${book.Author ? `<div class="book-author">by ${escapeHtml(book.Author)}</div>` : ''}
-          ${book.Notes ? `<div class="book-notes">"${escapeHtml(book.Notes)}"` : ''}
-        </div>
-
-        <div class="edit-form" id="edit-${book.RowIndex}" style="display:none;">
-          <label>Title</label>
-          <input type="text" id="edit-title-${book.RowIndex}" value="${escapeHtml(book.Title)}">
-          
-          <label>Author</label>
-          <input type="text" id="edit-author-${book.RowIndex}" value="${escapeHtml(book.Author)}">
-          
-          <label>Remarks</label>
-          <textarea id="edit-notes-${book.RowIndex}">${escapeHtml(book.Notes)}</textarea>
-
-          <div class="edit-actions">
-            <button class="btn-save" onclick="saveBook(${book.RowIndex})">Save Changes</button>
-            <button class="btn-cancel" onclick="toggleEdit(${book.RowIndex})">Cancel</button>
-          </div>
+    empty.style.display = 'none';
+    list.innerHTML = books.map(b => `
+      <div class="card" data-id="${escapeHtml(b.ID)}">
+        <h3>${escapeHtml(b.Title || '(untitled)')}</h3>
+        <div class="meta">${escapeHtml(b.Author || 'Unknown author')}${b.Genre ? ' · ' + escapeHtml(b.Genre) : ''}${b['Purchase Date'] ? ' · bought ' + escapeHtml(b['Purchase Date']) : ''}</div>
+        ${b.Notes ? '<div class="notes">' + escapeHtml(b.Notes) + '</div>' : ''}
+        <div class="readRow">
+          <label><input type="checkbox" data-field="Read_Kis" ${b.Read_Kis === true ? 'checked' : ''}> Read by Kis</label>
+          <label><input type="checkbox" data-field="Read_Bk" ${b.Read_Bk === true ? 'checked' : ''}> Read by Bk</label>
         </div>
       </div>
     `).join('');
   }
 
-  function toggleEdit(rowIndex) {
-    const viewEl = document.getElementById(`view-${rowIndex}`);
-    const editEl = document.getElementById(`edit-${rowIndex}`);
-    const isEditing = editEl.style.display === 'block';
-
-    viewEl.style.display = isEditing ? 'block' : 'none';
-    editEl.style.display = isEditing ? 'none' : 'block';
-  }
-
-  async function saveBook(rowIndex) {
-    const title = document.getElementById(`edit-title-${rowIndex}`).value.trim();
-    const author = document.getElementById(`edit-author-${rowIndex}`).value.trim();
-    const notes = document.getElementById(`edit-notes-${rowIndex}`).value.trim();
-
-    if (!title) {
-      alert("Title cannot be empty!");
-      return;
-    }
-
-    const card = document.getElementById(`card-${rowIndex}`);
-    card.style.opacity = '0.5';
-
-    const formData = new FormData();
-    formData.append('action', 'updateBook');
-    formData.append('payload', JSON.stringify({ rowIndex, title, author, notes }));
-
-    try {
-      const res = await fetch(APPS_SCRIPT_URL, { method: 'POST', body: formData });
-      const result = await res.json();
-      
-      if (result.success) {
-        fetchBooks(searchInput.value);
-      } else {
-        alert("Failed to update book: " + result.error);
-        card.style.opacity = '1';
-      }
-    } catch (err) {
-      alert("Error connecting to server.");
-      card.style.opacity = '1';
-    }
-  }
-
   function escapeHtml(s) {
-    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      fetchBooks(searchInput.value);
-    }, 300);
+  function applyFilter() {
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    if (!q) { render(allBooks); return; }
+    const filtered = allBooks.filter(b =>
+      String(b.Title || '').toLowerCase().includes(q) ||
+      String(b.Author || '').toLowerCase().includes(q)
+    );
+    render(filtered);
+  }
+
+  document.getElementById('search').addEventListener('input', applyFilter);
+
+  document.getElementById('list').addEventListener('change', function(e) {
+    const target = e.target;
+    if (target.tagName !== 'INPUT' || target.type !== 'checkbox') return;
+    const card = target.closest('.card');
+    const id = card.getAttribute('data-id');
+    const field = target.getAttribute('data-field');
+    const value = target.checked;
+    target.disabled = true;
+    google.script.run
+      .withSuccessHandler(() => {
+        target.disabled = false;
+        const b = allBooks.find(x => x.ID === id);
+        if (b) b[field] = value;
+      })
+      .withFailureHandler(err => {
+        target.checked = !value;
+        target.disabled = false;
+        alert('Could not update: ' + err.message);
+      })
+      .updateReadStatus(id, field, value);
   });
 
-  fetchBooks();
+  google.script.run
+    .withSuccessHandler(books => {
+      allBooks = books;
+      document.getElementById('loading').style.display = 'none';
+      render(allBooks);
+    })
+    .withFailureHandler(err => {
+      document.getElementById('loading').textContent = 'Error loading books: ' + err.message;
+    })
+    .getBooks();
 </script>
 </body>
 </html>
